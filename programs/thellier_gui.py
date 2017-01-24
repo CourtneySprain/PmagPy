@@ -3131,6 +3131,10 @@ else:
            # edit first off existing anisotropy data for this specimen of this TYPE from self.spec_data
                     cond1 = self.spec_data['specimen'].str.contains(specimen+"$")==True
                     meths= new_aniso_parameters['magic_method_codes']
+                    for key in new_data.keys():
+                        if key not in self.spec_data.columns:
+                            self.spec_data[key]=""
+                        
                     #new_data['method_codes']=self.spec_data[self.spec_data['specimen'].str.contains(specimen+"$")==True].method_codes+':'+new_aniso_parameters['magic_method_codes']
                     cond3=self.spec_data['aniso_s'].notnull()==True
                     cond2 = self.spec_data['aniso_type']==TYPE
@@ -5992,6 +5996,10 @@ else:
                 anis_data=self.spec_data[self.spec_data['method_codes'].str.contains('LP-AN')==True] # get the anisotropy records
                 anis_data=anis_data[anis_data['aniso_s'].notnull()] # get the ones with anisotropy tensors that aren't blank
                 anis_data=anis_data[['specimen','aniso_s','aniso_ftest','aniso_ftest12','aniso_ftest23','aniso_s_n_measurements','aniso_s_sigma','aniso_type','description']]
+                L=['specimen','aniso_s','aniso_ftest','aniso_ftest12','aniso_ftest23','aniso_s_n_measurements','aniso_s_sigma','aniso_type','description']
+                if 'aniso_alt' in anis_data.columns:
+                    L.append('aniso_alt')                
+                anis_data=anis_data[L]
                 # rename column headers to 2.5
                 #anis_data = anis_data.rename(columns=map_magic.aniso_magic3_2_magic2_map)
                 # convert to list of dictionaries
@@ -5999,6 +6007,11 @@ else:
                 for AniSpec in anis_dict:  # slip aniso data into Data[s]
                     AniSpec=map_magic.convert_aniso('magic2',AniSpec) # unpack aniso_s
                     s=AniSpec['er_specimen_name']
+                    if 'aniso_alt' in AniSpec.keys() and type(AniSpec['aniso_alt'])==float:
+                        AniSpec['anisotropy_alt']=AniSpec['aniso_alt']
+                    elif 'aniso_alt' in AniSpec.keys() and type(AniSpec['aniso_alt'])!=float:
+                        AniSpec['anisotropy_alt']=""
+                        
                     if 'AniSpec' not in Data[s].keys(): Data[s]['AniSpec']={}  # make a blank
                     TYPE=AniSpec['anisotropy_type']
                     Data[s]['AniSpec'][TYPE]=AniSpec
