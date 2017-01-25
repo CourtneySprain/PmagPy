@@ -3131,6 +3131,10 @@ else:
            # edit first off existing anisotropy data for this specimen of this TYPE from self.spec_data
                     cond1 = self.spec_data['specimen'].str.contains(specimen+"$")==True
                     meths= new_aniso_parameters['magic_method_codes']
+                    for key in new_data.keys():
+                        if key not in self.spec_data.columns:
+                            self.spec_data[key]=""
+                        
                     #new_data['method_codes']=self.spec_data[self.spec_data['specimen'].str.contains(specimen+"$")==True].method_codes+':'+new_aniso_parameters['magic_method_codes']
                     cond3=self.spec_data['aniso_s'].notnull()==True
                     cond2 = self.spec_data['aniso_type']==TYPE
@@ -5891,7 +5895,7 @@ else:
                     Data[s]['aarmblock']=[]
                 Data[s]['aarmblock'].append(rec)
 
-            if "LP-CR-TRM" in rec["magic_method_codes"]:
+            if "LP-CR-TRM" in rec["magic_method_codes"] and rec['measurement_description']!="":
                 if 'crblock' not in Data[s].keys():
                     Data[s]['crblock']=[]
                 Data[s]['crblock'].append(rec)
@@ -5992,6 +5996,10 @@ else:
                 anis_data=self.spec_data[self.spec_data['method_codes'].str.contains('LP-AN')==True] # get the anisotropy records
                 anis_data=anis_data[anis_data['aniso_s'].notnull()] # get the ones with anisotropy tensors that aren't blank
                 anis_data=anis_data[['specimen','aniso_s','aniso_ftest','aniso_ftest12','aniso_ftest23','aniso_s_n_measurements','aniso_s_sigma','aniso_type','description']]
+                L=['specimen','aniso_s','aniso_ftest','aniso_ftest12','aniso_ftest23','aniso_s_n_measurements','aniso_s_sigma','aniso_type','description']
+                if 'aniso_alt' in anis_data.columns:
+                    L.append('aniso_alt')                
+                anis_data=anis_data[L]
                 # rename column headers to 2.5
                 #anis_data = anis_data.rename(columns=map_magic.aniso_magic3_2_magic2_map)
                 # convert to list of dictionaries
@@ -5999,6 +6007,11 @@ else:
                 for AniSpec in anis_dict:  # slip aniso data into Data[s]
                     AniSpec=map_magic.convert_aniso('magic2',AniSpec) # unpack aniso_s
                     s=AniSpec['er_specimen_name']
+                    if 'aniso_alt' in AniSpec.keys() and type(AniSpec['aniso_alt'])==float:
+                        AniSpec['anisotropy_alt']=AniSpec['aniso_alt']
+                    elif 'aniso_alt' in AniSpec.keys() and type(AniSpec['aniso_alt'])!=float:
+                        AniSpec['anisotropy_alt']=""
+                        
                     if 'AniSpec' not in Data[s].keys(): Data[s]['AniSpec']={}  # make a blank
                     TYPE=AniSpec['anisotropy_type']
                     Data[s]['AniSpec'][TYPE]=AniSpec
@@ -6256,14 +6269,16 @@ else:
                 cooling_rate_data['alteration_check']=[]
                 for rec in Data[s]['crblock']:
                     magic_method_codes=rec['magic_method_codes'].strip(' ').strip('\n').split(":")
-                    measurement_description=rec['measurement_description'].strip(' ').strip('\n').split(":")
+                    try:
+                        measurement_description=rec['measurement_description'].strip(' ').strip('\n').split(":")
+                        index=measurement_description.index("K/min")
+                        cooling_rate=float(measurement_description[index-1])
+                        cooling_rates_list.append(cooling_rate)
+                    except:
+                        measurement_description=[]
                     if "LT-T-Z" in magic_method_codes:
                         cooling_rate_data['baseline']=float(rec['measurement_magn_moment'])
                         continue
-
-                    index=measurement_description.index("K/min")
-                    cooling_rate=float(measurement_description[index-1])
-                    cooling_rates_list.append(cooling_rate)
                     moment=float(rec['measurement_magn_moment'])
                     if "LT-T-I" in magic_method_codes:
                         cooling_rate_data['pairs'].append([cooling_rate,moment])
@@ -6752,7 +6767,6 @@ else:
                 # copy measurements file to WD, keeping original name
                 shutil.copy(magic_file_real, WD_file_real)
                 fnames = {'measurements': magic_file_short}
-            #self.contribution = nb.Contribution(self.WD, custom_filenames=fnames, read_tables=['measurements', 'specimens', 'samples','sites'])
             self.contribution = nb.Contribution(self.WD, custom_filenames=fnames,read_tables=['measurements', 'specimens', 'samples','sites'])
             # make backup files
             if 'specimens' in self.contribution.tables:
@@ -6767,6 +6781,16 @@ else:
             else:
                 self.samp_container = nb.MagicDataFrame(dtype='samples',columns=['sample'])
             self.samp_data = self.samp_container.df # only need this for saving tables
+            if 'cooling_rate' not in self.samp_data.columns:
+                    self.samp_data['cooling_rate']=None
+                    print '-W- Your sample file has no cooling rate data.'
+            samples=self.samp_data[['sample','site','cooling_rate']]
+            samples=samples.rename(columns={'site':'er_site_name','sample':'er_sample_name','cooling_rate':'sample_cooling_rate'})
+            er_samples=samples.to_dict('records') # pick out what is needed by thellier_gui and put in 2.5 format
+            data_er_samples={}
+            for s in er_samples:
+                data_er_samples[s['er_sample_name']]=s
+            age_headers=['site','age','age_high','age_low','age_unit']
             if 'sites' in self.contribution.tables:
                 self.site_container = self.contribution.tables['sites']
                 self.site_container.write_magic_file(custom_name='sites.bak', dir_path=self.WD) # create backup file with original
@@ -6779,21 +6803,22 @@ else:
                     print '-W- Your site file has no longitude data.'
                 self.site_data = self.site_data[self.site_data['lat'].notnull()]
                 self.site_data = self.site_data[self.site_data['lon'].notnull()]
-                if 'age' in self.site_data.columns:
-                    self.site_data = self.site_data[self.site_data['age'].notnull()]
-                self.site_container.df = self.site_data
+                #if 'age' in self.site_data.columns:
+                #    self.site_data = self.site_data[self.site_data['age'].notnull()]
+                #self.site_container.df = self.site_data
                 # update container df to ignore above null values
                 site_headers = ['site','int_abs','int_abs_sigma','int_abs_sigma_perc','int_n_samples','int_n_specimens']
                 for head in site_headers:
                     if head not in self.site_data:
                         self.site_data[head] = None
-                age_headers=['site','age','age_high','age_low','age_unit']
                 for header in age_headers:
                     # check for missing age headers
                     if header not in self.site_data.columns:
                         #create blank column for this header
+            
                         self.site_data[header]=None
                 age_data=self.site_data[age_headers]
+                age_data = age_data[age_data['age'].notnull()]
                 age_data=age_data.rename(columns={'site':'er_site_name'})
                 er_ages=age_data.to_dict('records')  # save this in 2.5 format
                 data_er_ages={}
